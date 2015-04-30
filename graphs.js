@@ -1,10 +1,17 @@
 /// <reference path="../typings/angularjs/angular.d.ts" />
 /// <reference path="../typings/d3/d3.d.ts" />
+var __extends = this.__extends || function (d, b) {
+    for (var p in b) if (b.hasOwnProperty(p)) d[p] = b[p];
+    function __() { this.constructor = d; }
+    __.prototype = b.prototype;
+    d.prototype = new __();
+};
 var ngGraphs;
 (function (ngGraphs) {
     var AxesCtrl = (function () {
         function AxesCtrl($scope) {
             this.$scope = $scope;
+            this.autoScale = false;
             // Bits that handle all of the children of the plot
             this.children = [];
             this.drawnElements = [];
@@ -12,7 +19,7 @@ var ngGraphs;
             // So that the watches in the link function can call for a re-render
             $scope.render = this.render.bind(this);
             // Update the appearance when the config changes
-            $scope.$watch('config', $scope.render);
+            $scope.$watch('options', $scope.render, true);
             /* We create an apply function (so it can be removed),
              * and force an $apply on resize events, triggering
              * the `$watch`s in the `link` function.
@@ -28,14 +35,57 @@ var ngGraphs;
             var $scope = this.$scope;
             this.setOptions(this.$scope.options);
             $scope.svg.selectAll('*').remove();
-            var p = this.padding;
-            var w = $scope.width - (p[1] + p[3]);
-            var h = $scope.height - (p[0] + p[2]);
             // Set up the scales
-            this.xScale = d3.scale.linear().domain(this.xDomain).range([p[3], w + p[3]]);
-            this.yScale = d3.scale.linear().domain(this.yDomain).range([h + p[0], p[0]]);
+            // TODO determine yDomain and xDomain from children if they are not defined
+            this.setScales();
             this.drawAxes();
             this.drawChildren();
+        };
+        /** Set the scales of the plot
+         * if the xDomain or yDomain options are set, use them
+         * otherwise, determine the values from all the children
+         *
+         * The xDomain is calculated first, because the yDomain depends on it
+         * for most drawable elements.
+         */
+        AxesCtrl.prototype.setScales = function () {
+            // create the actual scales based on the SVG geometry.
+            var p = this.padding;
+            var w = this.$scope.width - (p[1] + p[3]);
+            var h = this.$scope.height - (p[0] + p[2]);
+            this.autoScale = false;
+            // Create the xScale
+            if (!this.xDomain || this.xDomain[0] == this.xDomain[1]) {
+                this.autoScale = true;
+                this.xDomain = [0, 0];
+                for (var i in this.children) {
+                    this.xDomain = this.unionRange(this.xDomain, this.children[i].xRange());
+                }
+            }
+            // XXX xScale is needed to calculate the yScale for histograms
+            // TODO add options for different scales.
+            this.xScale = d3.scale.linear().domain(this.xDomain).range([p[3], w + p[3]]);
+            // Create the yScale
+            if (!this.yDomain || this.yDomain[0] == this.yDomain[1]) {
+                this.autoScale = true;
+                this.yDomain = [0, 0];
+                for (var i in this.children) {
+                    // Because the yDomain may depend on the xScale (in histogram), we supply the axes here
+                    this.yDomain = this.unionRange(this.yDomain, this.children[i].yRange(this));
+                }
+            }
+            this.yScale = d3.scale.linear().domain(this.yDomain).range([h + p[0], p[0]]);
+        };
+        /** Helper function to get the minimal covering range of two ranges
+         *  intervals with same left and right coordinate are considered empty
+         */
+        AxesCtrl.prototype.unionRange = function (r1, r2) {
+            if (r1[0] == r1[1])
+                return r2;
+            else if (r2[0] == r2[1])
+                return r1;
+            else
+                return [Math.min(r1[0], r2[0]), Math.max(r1[1], r2[1])];
         };
         /** Draw the axes onto the plot
          */
@@ -56,20 +106,20 @@ var ngGraphs;
         AxesCtrl.prototype.setOptions = function (opts) {
             this.padding = [30, 30, 30, 30]; // top right bottom left
             if (opts) {
-                this.xDomain = opts.xDomain || [-1, 1];
-                this.yDomain = opts.yDomain || [-1, 1];
+                this.xDomain = opts.xDomain;
+                this.yDomain = opts.yDomain;
                 this.xLabel = opts.xLabel || "";
                 this.yLabel = opts.yLabel || "";
             }
             else {
-                this.xDomain = [-1, 1];
-                this.yDomain = [-1, 1];
+                this.xDomain;
+                this.yDomain;
                 this.xLabel = "";
                 this.yLabel = "";
             }
         };
-        AxesCtrl.prototype.addChild = function (drawFunction) {
-            return this.children.push(drawFunction) - 1;
+        AxesCtrl.prototype.addChild = function (element) {
+            return this.children.push(element) - 1;
         };
         AxesCtrl.prototype.rmChild = function (index) {
             // XXX if we remove the child, we probably also want to undraw it
@@ -78,7 +128,7 @@ var ngGraphs;
         };
         AxesCtrl.prototype.drawChild = function (index) {
             this.undrawChild(index);
-            this.drawnElements[index] = this.children[index](this.drawingRegion, this.xScale, this.yScale, this);
+            this.drawnElements[index] = this.children[index].draw(this.drawingRegion, this.xScale, this.yScale, this);
         };
         AxesCtrl.prototype.reorderElements = function () {
             // Reorder the drawn elements
@@ -92,8 +142,12 @@ var ngGraphs;
             }
         };
         AxesCtrl.prototype.redrawChild = function (index) {
-            this.drawChild(index);
-            this.reorderElements();
+            if (this.autoScale)
+                this.render();
+            else {
+                this.drawChild(index);
+                this.reorderElements();
+            }
         };
         AxesCtrl.prototype.drawChildren = function () {
             for (var i in this.children)
@@ -138,14 +192,28 @@ var ngGraphs;
         };
     }
     ngGraphs.axesDirective = axesDirective;
-    function drawLine(l, svg, xScale, yScale) {
-        var sw = l.options.strokeWidth || 1;
-        var color = l.options.color || 'black';
-        var start = l.start;
-        var end = l.end;
-        var drawnLine = svg.append("line").attr("x1", xScale(start[0])).attr("y1", yScale(start[1])).attr("x2", xScale(end[0])).attr("y2", yScale(end[1])).attr('stroke-width', sw).attr('stroke', color);
-        return drawnLine;
-    }
+    var Line = (function () {
+        // XXX We may need to add functions to change line data if parts of `l` change.
+        function Line(l) {
+            this.l = l;
+        }
+        Line.prototype.draw = function (svg, xScale, yScale) {
+            var l = this.l;
+            var sw = l.options.strokeWidth || 1;
+            var color = l.options.color || 'black';
+            var start = l.start;
+            var end = l.end;
+            var drawnLine = svg.append("line").attr("x1", xScale(start[0])).attr("y1", yScale(start[1])).attr("x2", xScale(end[0])).attr("y2", yScale(end[1])).attr('stroke-width', sw).attr('stroke', color);
+            return drawnLine;
+        };
+        Line.prototype.xRange = function () {
+            return [this.l.start[0], this.l.end[0]];
+        };
+        Line.prototype.yRange = function () {
+            return [this.l.start[1], this.l.end[1]];
+        };
+        return Line;
+    })();
     function lineDirective() {
         return {
             require: '^axes',
@@ -156,27 +224,59 @@ var ngGraphs;
                 options: '='
             },
             link: function (scope, element, attrs, axesCtrl) {
-                var index = axesCtrl.addChild(drawLine.bind(null, scope));
+                var line = new Line(scope);
+                var index = axesCtrl.addChild(line);
+                // XXX Currently, there are no watches to handle changes to scope properties
             }
         };
     }
     ngGraphs.lineDirective = lineDirective;
-    function drawPlot(plot, svg, xScale, yScale) {
-        // XXX This ends up repeating the version for the line
-        // except with different defaults
-        var sw = plot.options.strokeWidth || 2;
-        var color = plot.options.color || 'blue';
-        var plotData = plot.data || [];
-        // This next bit creates an svg path generator
-        var pathGen = d3.svg.line().x(function (d) {
-            return xScale(d[0]);
-        }).y(function (d) {
-            return yScale(d[1]);
-        }).interpolate("linear");
-        // Now, the plot is actually added to the svg
-        var path = svg.append("path").attr("d", pathGen(plotData)).attr("stroke", color).attr("stroke-width", sw).attr("fill", "none");
-        return path;
-    }
+    var Plot = (function () {
+        function Plot(plot) {
+            this.plot = plot;
+            this.setData();
+        }
+        Plot.prototype.setData = function (axes) {
+            this.data = this.plot.data || [];
+        };
+        Plot.prototype.draw = function (svg, xScale, yScale, axes) {
+            // XXX This ends up repeating the version for the line
+            // except with different defaults
+            var sw = this.plot.options.strokeWidth || 2;
+            var color = this.plot.options.color || 'blue';
+            // XXX Probably don't need to recalculate data on every draw.
+            // However, this is here to ensure it is actually ready for every draw.
+            // e.g. when the axes are resized
+            this.setData(axes);
+            // This next bit creates an svg path generator
+            var pathGen = d3.svg.line().x(function (d) {
+                return xScale(d[0]);
+            }).y(function (d) {
+                return yScale(d[1]);
+            }).interpolate("linear");
+            // Now, the plot is actually added to the svg
+            var path = svg.append("path").attr("d", pathGen(this.data)).attr("stroke", color).attr("stroke-width", sw).attr("fill", "none");
+            return path;
+        };
+        Plot.prototype.xRange = function () {
+            // TODO re-think when all of this data is being set
+            this.setData();
+            return [d3.min(this.data, function (d) {
+                return d[0];
+            }), d3.max(this.data, function (d) {
+                return d[0];
+            })];
+        };
+        Plot.prototype.yRange = function (axes) {
+            this.setData();
+            return [d3.min(this.data, function (d) {
+                return d[1];
+            }), d3.max(this.data, function (d) {
+                return d[1];
+            })];
+        };
+        return Plot;
+    })();
     function plotDirective() {
         return {
             restrict: 'E',
@@ -187,7 +287,8 @@ var ngGraphs;
                 data: '='
             },
             link: function (scope, elm, attrs, axesCtrl) {
-                var index = axesCtrl.addChild(drawPlot.bind(null, scope));
+                var plot = new Plot(scope);
+                var index = axesCtrl.addChild(plot);
                 scope.$watch('options', function () {
                     axesCtrl.redrawChild(index);
                 }, true);
@@ -198,21 +299,43 @@ var ngGraphs;
         };
     }
     ngGraphs.plotDirective = plotDirective;
-    function drawFunction(f, axes, svg, xScale, yScale) {
-        // TODO Change N based on width of axes
-        var N = 100;
-        var plotData = Array();
-        var i;
-        for (i = 0; i <= N; i++) {
-            var x = (axes.xDomain[1] - axes.xDomain[0]) * i / N + axes.xDomain[0];
-            plotData.push([x, f.f(x)]);
+    var Func = (function (_super) {
+        __extends(Func, _super);
+        function Func(f) {
+            this.f = f.f;
+            _super.call(this, f);
         }
-        var plot = {
-            options: f.options,
-            data: plotData
+        Func.prototype.setData = function (axes) {
+            var domain = [0, 1];
+            var N = 100; // number of samples
+            if (axes) {
+                domain = axes.xDomain;
+                var range = axes.xScale.range();
+                N = Math.abs(range[0] - range[1]);
+            }
+            var N = 100;
+            var plotData = Array();
+            var i;
+            for (i = 0; i <= N; i++) {
+                var x = (domain[1] - domain[0]) * i / N + domain[0];
+                plotData.push([x, this.f(x)]);
+            }
+            this.data = plotData;
         };
-        return drawPlot(plot, svg, xScale, yScale);
-    }
+        Func.prototype.xRange = function () {
+            // XXX doesn't make any sense for functions
+            return [0, 0];
+        };
+        Func.prototype.yRange = function (axes) {
+            this.setData(axes);
+            return [d3.min(this.data, function (d) {
+                return d[1];
+            }), d3.max(this.data, function (d) {
+                return d[1];
+            })];
+        };
+        return Func;
+    })(Plot);
     function functionDirective() {
         return {
             restrict: 'E',
@@ -223,33 +346,52 @@ var ngGraphs;
                 f: '='
             },
             link: function (scope, elm, attrs, axesCtrl) {
-                /* The following sets up watches for data, and config
-                 */
-                var index = axesCtrl.addChild(drawFunction.bind(null, scope, axesCtrl));
+                var func = new Func(scope);
+                var index = axesCtrl.addChild(func);
                 scope.$watch('options', function () {
                     axesCtrl.redrawChild(index);
                 }, true);
-                scope.$watch('data', function () {
+                scope.$watch('f', function () {
                     axesCtrl.redrawChild(index);
-                });
+                }, true);
             }
         };
     }
     ngGraphs.functionDirective = functionDirective;
-    function drawHistogram(hist, axes, svg, xScale, yScale) {
-        var bins = hist.options.bins || 10;
-        var hdata = d3.layout.histogram().frequency(false).range(axes.xDomain).bins(xScale.ticks(bins))(hist.data);
-        var h = svg.append('g');
-        var bar = h.selectAll(".bar").data(hdata).enter().append("g").attr("class", "bar").attr("transform", function (d) {
-            return "translate(" + xScale(d.x) + "," + yScale(d.y) + ")";
-        });
-        bar.append("rect").attr("x", 1).attr("width", function (d) {
-            return xScale(d.x + d.dx) - xScale(d.x);
-        }).attr("height", function (d) {
-            return yScale(0) - yScale(d.y);
-        });
-        return h;
-    }
+    var Histogram = (function () {
+        function Histogram(hist) {
+            this.hist = hist;
+        }
+        Histogram.prototype.setData = function (axes) {
+            var bins = this.hist.options.bins || 10;
+            this.data = d3.layout.histogram().frequency(!!this.hist.options.frequency).range(axes.xDomain).bins(axes.xScale.ticks(bins))(this.hist.data);
+        };
+        Histogram.prototype.draw = function (svg, xScale, yScale, axes) {
+            this.setData(axes);
+            var h = svg.append('g');
+            var bar = h.selectAll(".bar").data(this.data).enter().append("g").attr("class", "bar").attr("transform", function (d) {
+                return "translate(" + xScale(d.x) + "," + yScale(d.y) + ")";
+            });
+            bar.append("rect").attr("x", 1).attr("width", function (d) {
+                return xScale(d.x + d.dx) - xScale(d.x);
+            }).attr("height", function (d) {
+                return yScale(0) - yScale(d.y);
+            });
+            return h;
+        };
+        Histogram.prototype.xRange = function () {
+            // TODO return max and min of this.hist.data
+            return [0, 0];
+        };
+        Histogram.prototype.yRange = function (axes) {
+            this.setData(axes);
+            // TODO return max value of hist[i].y
+            return [0, d3.max(this.data, function (d) {
+                return d.y;
+            })];
+        };
+        return Histogram;
+    })();
     function histogramDirective() {
         return {
             restrict: 'E',
@@ -260,9 +402,8 @@ var ngGraphs;
                 data: '='
             },
             link: function (scope, elm, attrs, axesCtrl) {
-                /* The following sets up watches for data, and config
-                 */
-                var index = axesCtrl.addChild(drawHistogram.bind(null, scope, axesCtrl));
+                var histogram = new Histogram(scope);
+                var index = axesCtrl.addChild(histogram);
                 scope.$watch('options', function () {
                     axesCtrl.redrawChild(index);
                 }, true);
