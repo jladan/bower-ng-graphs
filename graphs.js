@@ -264,17 +264,20 @@ var ngGraphs;
         }
         Line.prototype.draw = function (svg, xScale, yScale) {
             var l = this.l;
-            var sw = l.options.strokeWidth || 1;
-            var color = l.options.color || 'black';
+            var sw = l.options.strokeWidth;
+            var color = l.options.color;
             var start = l.start;
             var end = l.end;
             var drawnLine = svg.append("line")
+                .attr("class", "line")
                 .attr("x1", xScale(start[0]))
                 .attr("y1", yScale(start[1]))
                 .attr("x2", xScale(end[0]))
-                .attr("y2", yScale(end[1]))
-                .attr('stroke-width', sw)
-                .attr('stroke', color);
+                .attr("y2", yScale(end[1]));
+            if (sw)
+                drawnLine.style('stroke-width', sw);
+            if (color)
+                drawnLine.style('stroke', color);
             return drawnLine;
         };
         Line.prototype.xRange = function () {
@@ -313,8 +316,8 @@ var ngGraphs;
         Plot.prototype.draw = function (svg, xScale, yScale, axes) {
             // XXX This ends up repeating the version for the line
             // except with different defaults
-            var sw = this.plot.options.strokeWidth || 2;
-            var color = this.plot.options.color || 'blue';
+            var sw = this.plot.options.strokeWidth;
+            var color = this.plot.options.color;
             // XXX Probably don't need to recalculate data on every draw.
             // However, this is here to ensure it is actually ready for every draw.
             // e.g. when the axes are resized
@@ -326,10 +329,13 @@ var ngGraphs;
                 .interpolate("linear");
             // Now, the plot is actually added to the svg
             var path = svg.append("path")
+                .attr("class", "plot")
                 .attr("d", pathGen(this.data))
-                .attr("stroke", color)
-                .attr("stroke-width", sw)
                 .attr("fill", "none");
+            if (color)
+                path.style("stroke", color);
+            if (sw)
+                path.style("stroke-width", sw);
             return path;
         };
         Plot.prototype.xRange = function () {
@@ -433,7 +439,7 @@ var ngGraphs;
         };
         Histogram.prototype.draw = function (svg, xScale, yScale, axes) {
             this.setData(axes);
-            var h = svg.append('g');
+            var h = svg.append('g').attr("class", "histogram");
             var bar = h.selectAll(".bar")
                 .data(this.data).enter().append("g")
                 .attr("class", "bar")
