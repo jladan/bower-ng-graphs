@@ -59,6 +59,8 @@ var ngGraphs;
                 for (var i in this.children) {
                     this.xDomain = this.unionRange(this.xDomain, this.children[i].xRange());
                 }
+                if (this.xDomain[0] == this.xDomain[1])
+                    this.xDomain = [0, 1];
             }
             // XXX xScale is needed to calculate the yScale for histograms
             switch (this.xScaleType) {
@@ -85,6 +87,8 @@ var ngGraphs;
                     // Because the yDomain may depend on the xScale (in histogram), we supply the axes here
                     this.yDomain = this.unionRange(this.yDomain, this.children[i].yRange(this));
                 }
+                if (this.yDomain[0] == this.yDomain[1])
+                    this.yDomain = [0, 1];
             }
             switch (this.yScaleType) {
                 case "log":
@@ -160,24 +164,19 @@ var ngGraphs;
         /** Sets the options for the plot, such as axis locations, range, etc...
          */
         AxesCtrl.prototype.setOptions = function (opts) {
-            // TODO: make padding into a real option
-            this.padding = [30, 30, 30, 30]; // top right bottom left
             if (opts) {
                 this.xDomain = opts.xDomain;
                 this.yDomain = opts.yDomain;
-                this.xLabel = opts.xLabel || "";
-                this.yLabel = opts.yLabel || "";
-                this.xScaleType = opts.xScale || "linear";
-                this.yScaleType = opts.yScale || "linear";
+                this.xLabel = opts.xLabel;
+                this.yLabel = opts.yLabel;
+                this.xScaleType = opts.xScale;
+                this.yScaleType = opts.yScale;
+                this.padding = opts.padding;
             }
-            else {
-                this.xDomain;
-                this.yDomain;
-                this.xLabel = "";
-                this.yLabel = "";
-                this.xScaleType = "linear";
-                this.yScaleType = "linear";
-            }
+            // Use default values for options that cannot be undefined
+            this.xLabel = "";
+            this.yLabel = "";
+            this.padding = [30, 30, 30, 30]; // top right bottom left
         };
         AxesCtrl.prototype.addChild = function (element) {
             return this.children.push(element) - 1;
@@ -264,8 +263,10 @@ var ngGraphs;
         }
         Line.prototype.draw = function (svg, xScale, yScale) {
             var l = this.l;
-            var sw = l.options.strokeWidth;
-            var color = l.options.color;
+            if (l.options) {
+                var sw = l.options.strokeWidth;
+                var color = l.options.color;
+            }
             var start = l.start;
             var end = l.end;
             var drawnLine = svg.append("line")
@@ -316,8 +317,10 @@ var ngGraphs;
         Plot.prototype.draw = function (svg, xScale, yScale, axes) {
             // XXX This ends up repeating the version for the line
             // except with different defaults
-            var sw = this.plot.options.strokeWidth;
-            var color = this.plot.options.color;
+            if (this.plot.options) {
+                var sw = this.plot.options.strokeWidth;
+                var color = this.plot.options.color;
+            }
             // XXX Probably don't need to recalculate data on every draw.
             // However, this is here to ensure it is actually ready for every draw.
             // e.g. when the axes are resized
@@ -431,9 +434,13 @@ var ngGraphs;
             this.hist = hist;
         }
         Histogram.prototype.setData = function (axes) {
-            var bins = this.hist.options.bins || 10;
+            if (this.hist.options) {
+                var bins = this.hist.options.bins;
+                var freq = this.hist.options.frequency;
+            }
+            bins = bins || 10;
             this.data = d3.layout.histogram()
-                .frequency(!!this.hist.options.frequency)
+                .frequency(!!freq)
                 .range(axes.xDomain)
                 .bins(axes.xScale.ticks(bins))(this.hist.data);
         };
