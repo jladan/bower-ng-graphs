@@ -1,10 +1,9 @@
 /// <reference path="../typings/angularjs/angular.d.ts" />
 /// <reference path="../typings/d3/d3.d.ts" />
-var __extends = this.__extends || function (d, b) {
+var __extends = (this && this.__extends) || function (d, b) {
     for (var p in b) if (b.hasOwnProperty(p)) d[p] = b[p];
     function __() { this.constructor = d; }
-    __.prototype = b.prototype;
-    d.prototype = new __();
+    d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
 };
 var ngGraphs;
 (function (ngGraphs) {
@@ -221,13 +220,13 @@ var ngGraphs;
             }
         };
         return AxesCtrl;
-    })();
+    }());
     function axesDirective() {
         return {
             restrict: 'EA',
             transclude: true,
             scope: {
-                options: '='
+                options: '=',
             },
             controller: AxesCtrl,
             link: function (scope, elm, attrs) {
@@ -252,7 +251,7 @@ var ngGraphs;
                     scope.render();
                 });
             },
-            template: '<div ng-transclude></div>'
+            template: '<div ng-transclude></div>',
         };
     }
     ngGraphs.axesDirective = axesDirective;
@@ -288,7 +287,7 @@ var ngGraphs;
             return [this.l.start[1], this.l.end[1]];
         };
         return Line;
-    })();
+    }());
     function lineDirective() {
         return {
             require: '^axes',
@@ -296,7 +295,7 @@ var ngGraphs;
             scope: {
                 start: '=',
                 end: '=',
-                options: '='
+                options: '=',
             },
             link: function (scope, element, attrs, axesCtrl) {
                 var line = new Line(scope);
@@ -309,8 +308,11 @@ var ngGraphs;
     var Plot = (function () {
         function Plot(plot) {
             this.plot = plot;
+            this.initProps(plot);
             this.setData();
         }
+        Plot.prototype.initProps = function (plot) { };
+        ;
         Plot.prototype.setData = function (axes) {
             this.data = this.plot.data || [];
         };
@@ -351,7 +353,7 @@ var ngGraphs;
             return [d3.min(this.data, function (d) { return d[1]; }), d3.max(this.data, function (d) { return d[1]; })];
         };
         return Plot;
-    })();
+    }());
     function plotDirective() {
         return {
             restrict: 'E',
@@ -370,16 +372,19 @@ var ngGraphs;
                 scope.$watch('data', function () {
                     axesCtrl.redrawChild(index);
                 });
-            }
+            },
         };
     }
     ngGraphs.plotDirective = plotDirective;
     var Func = (function (_super) {
         __extends(Func, _super);
         function Func(f) {
-            this.f = f.f;
             _super.call(this, f);
+            this.f = f.f;
         }
+        Func.prototype.initProps = function (f) {
+            this.f = f.f;
+        };
         Func.prototype.setData = function (axes) {
             var domain = [0, 1];
             var N = 100; // number of samples
@@ -406,7 +411,7 @@ var ngGraphs;
             return [d3.min(this.data, function (d) { return d[1]; }), d3.max(this.data, function (d) { return d[1]; })];
         };
         return Func;
-    })(Plot);
+    }(Plot));
     function functionDirective() {
         return {
             restrict: 'E',
@@ -425,7 +430,7 @@ var ngGraphs;
                 scope.$watch('f', function () {
                     axesCtrl.redrawChild(index);
                 }, true);
-            }
+            },
         };
     }
     ngGraphs.functionDirective = functionDirective;
@@ -474,7 +479,7 @@ var ngGraphs;
             return [0, d3.max(this.data, function (d) { return d.y; })];
         };
         return Histogram;
-    })();
+    }());
     function histogramDirective() {
         return {
             restrict: 'E',
@@ -493,7 +498,7 @@ var ngGraphs;
                 scope.$watch('data', function () {
                     axesCtrl.redrawChild(index);
                 });
-            }
+            },
         };
     }
     ngGraphs.histogramDirective = histogramDirective;
