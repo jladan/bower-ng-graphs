@@ -1,8 +1,16 @@
 {
   "name": "ng-graphs",
-  "version": "0.2.0",
-  "main": "./plot.js",
+  "description": "simple plotting library using Angular",
+  "main": [
+      "./graphs.js",
+      "./plot-style.css",
+      "./graphs.d.ts"
+  ],
   "ignore": [],
   "dependencies": {
-  }
+  },
+  "license": "MIT",
+  "authors": [
+    "John Ladan <john@ladan.ca>"
+  ]
 }
